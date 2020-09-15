@@ -117,6 +117,16 @@ class Interfaces(OpenWrtConverter):
             del interface['wireless']
         if 'addresses' in interface:
             del interface['addresses']
+        # specific transformation
+        method = getattr(self, f'_intermediate_{interface["type"]}', None)
+        if method:
+            interface = method(interface)
+        return interface
+
+    def _intermediate_vxlan(self, interface):
+        interface['proto'] = 'vxlan'
+        interface['peeraddr'] = interface.pop('vtep')
+        interface['vid'] = interface.pop('vni')
         return interface
 
     _address_keys = ['address', 'mask', 'family', 'gateway']
@@ -233,6 +243,10 @@ class Interfaces(OpenWrtConverter):
             interface['mac'] = interface.pop('macaddr')
         if interface['network'] == self._get_uci_name(interface['name']):
             del interface['network']
+        # specific transformation
+        method = getattr(self, f'_netjson_{interface.get("proto")}', None)
+        if method:
+            interface = method(interface)
         return interface
 
     def __netjson_type(self, interface):
@@ -284,11 +298,22 @@ class Interfaces(OpenWrtConverter):
     def __get_special_interface_type(self, interface):
         username = interface.get('username', False)
         password = interface.get('password', False)
-
         if username and password:
             return 'dialup'
-
         return 'other'
+
+    def _netjson_vxlan(self, interface):
+        interface['type'] = interface.pop('proto', None)
+        interface['vtep'] = interface.pop('peeraddr', None)
+        interface['vni'] = int(interface.pop('vid', None))
+        interface['port'] = int(interface['port'])
+        if 'rxcsum' in interface:
+            interface['rxcsum'] = bool(interface['rxcsum'])
+        if 'txcsum' in interface:
+            interface['txcsum'] = bool(interface['txcsum'])
+        if 'ttl' in interface:
+            interface['ttl'] = int(interface['ttl'])
+        return interface
 
     def __netjson_address(self, address, interface):
         ip = ip_interface(address)
